@@ -1,0 +1,17 @@
+# Build output
+bin/
+obj/
+
+# Local user data and cached files
+Data/
+
+# IDE and user-specific files
+.vs/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Windows files
+Thumbs.db
+Desktop.ini

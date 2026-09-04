@@ -1,0 +1,51 @@
+<Window x:Class="LiveBell.StreamerSoundWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="主播提醒音效" Width="510" Height="350" ResizeMode="NoResize"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        WindowStartupLocation="CenterOwner">
+    <Border Margin="14" Background="#FCFDFE" CornerRadius="24" BorderBrush="#18000000" BorderThickness="1">
+        <Border.Effect>
+            <DropShadowEffect Color="#3500182A" BlurRadius="26" ShadowDepth="7" Opacity=".33"/>
+        </Border.Effect>
+        <Grid Margin="28,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="72"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="62"/>
+            </Grid.RowDefinitions>
+            <Grid Background="Transparent" MouseLeftButtonDown="Header_MouseLeftButtonDown">
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="主播提醒音效" FontSize="22" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
+                    <TextBlock x:Name="StreamerNameText" FontSize="11" Foreground="{StaticResource MutedBrush}" Margin="0,3,0,0"/>
+                </StackPanel>
+                <Button Content="×" Style="{StaticResource IconButton}" HorizontalAlignment="Right" VerticalAlignment="Center" Click="Cancel_Click"/>
+            </Grid>
+
+            <Border Grid.Row="1" Background="#F7F9FD" CornerRadius="16" Padding="18,16">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="这位主播的开播声音" FontWeight="SemiBold" FontSize="15" Foreground="{StaticResource TextBrush}"/>
+                    <TextBlock x:Name="SoundNameText" Grid.Row="1" Text="未单独设置，将使用默认提醒声音" FontSize="12" Foreground="{StaticResource MutedBrush}" Margin="0,7,0,14" TextTrimming="CharacterEllipsis"/>
+                    <StackPanel Grid.Row="2" Orientation="Horizontal">
+                        <Button Content="选择声音" Style="{StaticResource GhostButton}" Padding="12,7" Click="ChooseSound_Click" Margin="0,0,8,0"/>
+                        <Button Content="试听" Style="{StaticResource GhostButton}" Padding="12,7" Click="PreviewSound_Click" Margin="0,0,8,0"/>
+                        <Button Content="使用默认" Background="#FFF0F6" Foreground="#E94A82" Padding="12,7" Click="UseDefault_Click"/>
+                    </StackPanel>
+                </Grid>
+            </Border>
+            <TextBlock x:Name="ErrorText" Grid.Row="2" Foreground="#D65454" FontSize="11" Margin="2,12,0,0"/>
+            <Grid Grid.Row="3">
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <Button Content="取消" Style="{StaticResource GhostButton}" Click="Cancel_Click" Margin="0,0,10,0"/>
+                    <Button Content="保存" Click="Save_Click"/>
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>
