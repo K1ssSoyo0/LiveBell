@@ -343,7 +343,7 @@ namespace LiveBell
             Close();
         }
 
-        private void ShowFromTray()
+        internal void ShowFromTray()
         {
             Show();
             WindowState = WindowState.Normal;

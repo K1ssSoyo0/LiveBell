@@ -8,5 +8,5 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyProduct("开播铃")]
 [assembly: ComVisible(false)]
 [assembly: Guid("9de3ec12-9ca6-438c-a5b2-8c72f7c214ba")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.0.1.0")]
+[assembly: AssemblyFileVersion("1.0.1.0")]
