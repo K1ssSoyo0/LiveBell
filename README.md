@@ -25,3 +25,7 @@
 - .NET Framework 4.8
 - Windows WPF
 
+## 致谢
+
+功能思路参考 [EheRing](https://github.com/ibukidvko/EheRing)，本项目为独立实现。
+感谢原作者 ibukidvko 提供的启发。
