@@ -5,11 +5,13 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Interop;
 using Microsoft.Win32;
 using Drawing = System.Drawing;
 using Drawing2D = System.Drawing.Drawing2D;
@@ -636,8 +638,22 @@ namespace LiveBell
     {
         private const double StackGap = 12;
         private const double ScreenEdge = 22;
+        private const int GwlExStyle = -20;
+        private const long WsExNoActivate = 0x08000000L;
         private static readonly List<LiveToast> ActiveToasts = new List<LiveToast>();
         private readonly System.Windows.Threading.DispatcherTimer timer;
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowLongPtr", SetLastError = true)]
+        private static extern IntPtr GetWindowLongPtr64(IntPtr windowHandle, int index);
+
+        [DllImport("user32.dll", EntryPoint = "GetWindowLong", SetLastError = true)]
+        private static extern int GetWindowLong32(IntPtr windowHandle, int index);
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowLongPtr", SetLastError = true)]
+        private static extern IntPtr SetWindowLongPtr64(IntPtr windowHandle, int index, IntPtr value);
+
+        [DllImport("user32.dll", EntryPoint = "SetWindowLong", SetLastError = true)]
+        private static extern int SetWindowLong32(IntPtr windowHandle, int index, int value);
 
         public LiveToast(Streamer streamer, int displaySeconds)
         {
@@ -649,6 +665,8 @@ namespace LiveBell
             Background = System.Windows.Media.Brushes.Transparent;
             ShowInTaskbar = false;
             Topmost = true;
+            ShowActivated = false;
+            Focusable = false;
             System.Windows.Controls.Border root = new System.Windows.Controls.Border();
             root.Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(255, 255, 255));
             root.CornerRadius = new System.Windows.CornerRadius(18);
@@ -678,10 +696,44 @@ namespace LiveBell
             timer = new System.Windows.Threading.DispatcherTimer();
             timer.Interval = TimeSpan.FromSeconds(Math.Max(3, Math.Min(3600, displaySeconds)));
             timer.Tick += delegate { Close(); };
+            SourceInitialized += delegate { PreventActivation(); };
             timer.Start();
             Loaded += delegate { AddToStack(this); };
             Closed += delegate { timer.Stop(); RemoveFromStack(this); };
             MouseLeftButtonDown += delegate { OpenLiveRoom(streamer); Close(); };
+        }
+
+        private void PreventActivation()
+        {
+            try
+            {
+                IntPtr windowHandle = new WindowInteropHelper(this).Handle;
+                IntPtr existingStyle = GetExtendedStyle(windowHandle);
+                SetExtendedStyle(windowHandle, new IntPtr(existingStyle.ToInt64() | WsExNoActivate));
+            }
+            catch
+            {
+                // ShowActivated already keeps the normal notification path from stealing focus.
+            }
+        }
+
+        private static IntPtr GetExtendedStyle(IntPtr windowHandle)
+        {
+            return IntPtr.Size == 8
+                ? GetWindowLongPtr64(windowHandle, GwlExStyle)
+                : new IntPtr(GetWindowLong32(windowHandle, GwlExStyle));
+        }
+
+        private static void SetExtendedStyle(IntPtr windowHandle, IntPtr value)
+        {
+            if (IntPtr.Size == 8)
+            {
+                SetWindowLongPtr64(windowHandle, GwlExStyle, value);
+            }
+            else
+            {
+                SetWindowLong32(windowHandle, GwlExStyle, value.ToInt32());
+            }
         }
 
         private static void AddToStack(LiveToast toast)
