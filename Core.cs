@@ -330,8 +330,12 @@ namespace LiveBell
                 }
                 catch { }
                 object loopValue = Value(detail, "videoLoop", "video_loop", "video_loop_type");
-                bool videoLoop = IsTrue(loopValue);
-                bool liveConfirmed = detail != null;
+                object showStatus = Value(detail, "show_status", "showStatus");
+                bool detailHasNoVideoLoop = IsFalse(loopValue);
+                bool videoLoop = loopValue != null && !detailHasNoVideoLoop;
+                // The mobile page reports isLive for video loops too. Only the
+                // detail response can confirm both a live broadcast and a non-loop video.
+                bool liveConfirmed = detail != null && loopValue != null && showStatus != null;
                 return new RoomResult
                 {
                     ok = true,
@@ -340,7 +344,7 @@ namespace LiveBell
                     name = Text(TextValue(room, "nickname"), "斗鱼主播"),
                     avatarUrl = TextValue(room, "avatar"),
                     title = First(TextValue(detail, "room_name"), TextValue(room, "roomName"), "主播暂未填写直播标题"),
-                    isLive = liveConfirmed && !videoLoop && IsTrue(Value(room, "isLive")),
+                    isLive = liveConfirmed && detailHasNoVideoLoop && IsTrue(showStatus),
                     liveConfirmed = liveConfirmed,
                     videoLoop = videoLoop,
                     viewers = Number(room, "hn", "online"),
@@ -364,7 +368,8 @@ namespace LiveBell
             if (room == null) throw new InvalidOperationException("斗鱼没有找到这个直播间，可能房间号已失效。 ");
             string resolvedRoomId = First(TextValue(room, "room_id"), TextValue(room, "rid"), roomId);
             object loop = Value(room, "videoLoop", "video_loop", "video_loop_type");
-            bool isVideoLoop = IsTrue(loop);
+            bool fallbackHasNoVideoLoop = IsFalse(loop);
+            bool isVideoLoop = loop != null && !fallbackHasNoVideoLoop;
             bool confirmed = fromBetard && loop != null;
             return new RoomResult
             {
@@ -374,7 +379,7 @@ namespace LiveBell
                 name = First(TextValue(room, "owner_name"), TextValue(room, "nickname"), "斗鱼主播"),
                 avatarUrl = First(TextValue(room, "owner_avatar"), TextValue(room, "avatar"), TextValue(room, "owner_pic"), ""),
                 title = First(TextValue(room, "room_name"), TextValue(room, "show_title"), "主播暂未填写直播标题"),
-                isLive = confirmed && !isVideoLoop && IsTrue(Value(room, "show_status", "room_status")),
+                isLive = confirmed && fallbackHasNoVideoLoop && IsTrue(Value(room, "show_status", "room_status")),
                 liveConfirmed = confirmed,
                 videoLoop = isVideoLoop,
                 viewers = Number(room, "online", "online_num"),
@@ -471,6 +476,12 @@ namespace LiveBell
         {
             string text = value == null ? "" : Convert.ToString(value, CultureInfo.InvariantCulture).Trim();
             return text == "1" || String.Equals(text, "true", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsFalse(object value)
+        {
+            string text = value == null ? "" : Convert.ToString(value, CultureInfo.InvariantCulture).Trim();
+            return text == "0" || String.Equals(text, "false", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string First(params string[] values)
