@@ -20,12 +20,12 @@
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="28,0">
                     <Ellipse Width="42" Height="42">
                         <Ellipse.Fill>
-                            <ImageBrush ImageSource="pack://siteoforigin:,,,/Assets/avatar-icon.png" Stretch="UniformToFill"/>
+                            <ImageBrush x:Name="HeaderAvatarBrush" ImageSource="pack://siteoforigin:,,,/Assets/avatar-icon.png" Stretch="UniformToFill"/>
                         </Ellipse.Fill>
                     </Ellipse>
                     <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
                         <TextBlock Text="开播铃" FontSize="20" FontWeight="Bold" Foreground="{StaticResource TextBrush}"/>
-                        <TextBlock Text="露露卡妈妈提醒你看直播了" FontSize="11" Margin="0,2,0,0" Foreground="{StaticResource MutedBrush}"/>
+                        <TextBlock x:Name="HeaderSubtitleText" Text="露露卡妈妈提醒你看直播了" FontSize="11" Margin="0,2,0,0" Foreground="{StaticResource MutedBrush}"/>
                     </StackPanel>
                 </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,20,0">

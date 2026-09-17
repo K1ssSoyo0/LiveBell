@@ -32,6 +32,9 @@ namespace LiveBell
         public int IntervalSeconds = 60;
         public int ToastSeconds = 8;
         public string CustomSoundPath = "";
+        public string CustomAvatarPath = "";
+        public string HeaderSubtitle = "露露卡妈妈提醒你看直播了";
+        public string TaskbarLabel = "开播铃";
 
         public AppSettings Copy()
         {
@@ -42,7 +45,10 @@ namespace LiveBell
                 WindowsNotification = WindowsNotification,
                 IntervalSeconds = IntervalSeconds,
                 ToastSeconds = ToastSeconds,
-                CustomSoundPath = CustomSoundPath
+                CustomSoundPath = CustomSoundPath,
+                CustomAvatarPath = CustomAvatarPath,
+                HeaderSubtitle = HeaderSubtitle,
+                TaskbarLabel = TaskbarLabel
             };
         }
     }
@@ -148,6 +154,8 @@ namespace LiveBell
         public static readonly string StateFile = Path.Combine(Root, "开播铃数据.json");
         public static readonly string AvatarFolder = Path.Combine(Root, "avatars");
         public static readonly string SoundFolder = Path.Combine(Root, "sounds");
+        public static readonly string AppearanceFolder = Path.Combine(Root, "appearance");
+        public static readonly string DefaultAppAvatar = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "avatar-icon.png");
 
         public static AppState Load()
         {
@@ -160,6 +168,9 @@ namespace LiveBell
                     {
                         if (state.Settings == null) state.Settings = new AppSettings();
                         if (state.Settings.ToastSeconds < 3 || state.Settings.ToastSeconds > 3600) state.Settings.ToastSeconds = 8;
+                        if (state.Settings.CustomAvatarPath == null) state.Settings.CustomAvatarPath = "";
+                        if (state.Settings.HeaderSubtitle == null) state.Settings.HeaderSubtitle = "露露卡妈妈提醒你看直播了";
+                        if (String.IsNullOrWhiteSpace(state.Settings.TaskbarLabel)) state.Settings.TaskbarLabel = "开播铃";
                         if (state.Streamers == null) state.Streamers = new List<Streamer>();
                         return state;
                     }
@@ -190,6 +201,19 @@ namespace LiveBell
             Directory.CreateDirectory(SoundFolder);
             string target = Path.Combine(SoundFolder, soundName + extension);
             File.Copy(sourceFile, target, true);
+            return target;
+        }
+
+        public static string ImportAppearanceAvatar(string sourceFile)
+        {
+            if (String.IsNullOrWhiteSpace(sourceFile) || !File.Exists(sourceFile))
+                throw new InvalidOperationException("未找到选择的头像图片。");
+            string extension = Path.GetExtension(sourceFile);
+            if (String.IsNullOrWhiteSpace(extension)) extension = ".png";
+            Directory.CreateDirectory(AppearanceFolder);
+            string target = Path.Combine(AppearanceFolder, "自定义头像" + extension.ToLowerInvariant());
+            if (!String.Equals(Path.GetFullPath(sourceFile), Path.GetFullPath(target), StringComparison.OrdinalIgnoreCase))
+                File.Copy(sourceFile, target, true);
             return target;
         }
     }
@@ -614,18 +638,21 @@ namespace LiveBell
 
     internal static class TrayIconFactory
     {
-        private static Drawing.Bitmap bitmap;
         private static Drawing.Icon avatar;
+        private static string avatarPath = "";
 
-        public static Drawing.Icon GetAvatar()
+        public static Drawing.Icon GetAvatar(string customImageFile)
         {
-            if (avatar != null) return avatar;
-            string imageFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Assets", "avatar-icon.png");
+            string imageFile = !String.IsNullOrWhiteSpace(customImageFile) && File.Exists(customImageFile)
+                ? customImageFile
+                : LocalData.DefaultAppAvatar;
             if (!File.Exists(imageFile)) return Drawing.SystemIcons.Application;
+            string fullPath = Path.GetFullPath(imageFile);
+            if (avatar != null && String.Equals(avatarPath, fullPath, StringComparison.OrdinalIgnoreCase)) return avatar;
 
             using (Drawing.Bitmap source = new Drawing.Bitmap(imageFile))
+            using (Drawing.Bitmap bitmap = new Drawing.Bitmap(32, 32, Drawing.Imaging.PixelFormat.Format32bppArgb))
             {
-                bitmap = new Drawing.Bitmap(32, 32, Drawing.Imaging.PixelFormat.Format32bppArgb);
                 using (Drawing.Graphics graphics = Drawing.Graphics.FromImage(bitmap))
                 using (Drawing2D.GraphicsPath circle = new Drawing2D.GraphicsPath())
                 {
@@ -639,10 +666,26 @@ namespace LiveBell
                     int y = (source.Height - side) / 2;
                     graphics.DrawImage(source, new Drawing.Rectangle(0, 0, 32, 32), x, y, side, side, Drawing.GraphicsUnit.Pixel);
                 }
+                IntPtr handle = bitmap.GetHicon();
+                try
+                {
+                    using (Drawing.Icon temporary = Drawing.Icon.FromHandle(handle))
+                    {
+                        if (avatar != null) avatar.Dispose();
+                        avatar = (Drawing.Icon)temporary.Clone();
+                    }
+                }
+                finally
+                {
+                    DestroyIcon(handle);
+                }
             }
-            avatar = Drawing.Icon.FromHandle(bitmap.GetHicon());
+            avatarPath = fullPath;
             return avatar;
         }
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool DestroyIcon(IntPtr iconHandle);
     }
 
     public sealed class LiveToast : System.Windows.Window

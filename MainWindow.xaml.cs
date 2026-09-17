@@ -17,6 +17,7 @@ namespace LiveBell
     {
         private readonly AppState state;
         private readonly Forms.NotifyIcon tray;
+        private readonly Forms.ToolStripItem trayOpenItem;
         private readonly DispatcherTimer monitorTimer;
         private bool checking;
         private bool exiting;
@@ -44,10 +45,9 @@ namespace LiveBell
             }
 
             tray = new Forms.NotifyIcon();
-            tray.Icon = TrayIconFactory.GetAvatar();
-            tray.Text = "开播铃";
+            tray.Icon = TrayIconFactory.GetAvatar(state.Settings.CustomAvatarPath);
             Forms.ContextMenuStrip menu = new Forms.ContextMenuStrip();
-            menu.Items.Add("打开开播铃", null, delegate { ShowFromTray(); });
+            trayOpenItem = menu.Items.Add("打开开播铃", null, delegate { ShowFromTray(); });
             menu.Items.Add("立即刷新", null, async delegate { ShowFromTray(); await RefreshAllAsync(true); });
             menu.Items.Add(new Forms.ToolStripSeparator());
             menu.Items.Add("退出", null, delegate { ExitApplication(); });
@@ -55,6 +55,7 @@ namespace LiveBell
             tray.Visible = true;
             tray.DoubleClick += delegate { ShowFromTray(); };
             tray.BalloonTipClicked += delegate { OpenStreamer(latestWindowsNoticeStreamer); };
+            ApplyAppearance();
 
             monitorTimer = new DispatcherTimer();
             monitorTimer.Tick += async delegate { await RefreshAllAsync(false); };
@@ -181,6 +182,7 @@ namespace LiveBell
             }
             state.Settings = dialog.Value;
             monitorTimer.Interval = TimeSpan.FromSeconds(Math.Max(6, state.Settings.IntervalSeconds));
+            ApplyAppearance();
             Save();
             UpdateStatus();
         }
@@ -321,6 +323,28 @@ namespace LiveBell
         private void Save()
         {
             LocalData.Save(state);
+        }
+
+        private void ApplyAppearance()
+        {
+            string taskbarLabel = String.IsNullOrWhiteSpace(state.Settings.TaskbarLabel)
+                ? "开播铃"
+                : state.Settings.TaskbarLabel.Trim();
+            string avatarPath = !String.IsNullOrWhiteSpace(state.Settings.CustomAvatarPath) && File.Exists(state.Settings.CustomAvatarPath)
+                ? state.Settings.CustomAvatarPath
+                : LocalData.DefaultAppAvatar;
+            System.Windows.Media.ImageSource avatarImage = ImageTools.Load(avatarPath);
+
+            Title = taskbarLabel;
+            HeaderSubtitleText.Text = state.Settings.HeaderSubtitle ?? "";
+            if (avatarImage != null)
+            {
+                HeaderAvatarBrush.ImageSource = avatarImage;
+                Icon = avatarImage;
+            }
+            tray.Icon = TrayIconFactory.GetAvatar(avatarPath);
+            tray.Text = taskbarLabel.Length > 63 ? taskbarLabel.Substring(0, 63) : taskbarLabel;
+            trayOpenItem.Text = "打开" + taskbarLabel;
         }
 
         private static string Value(string value, string fallback)

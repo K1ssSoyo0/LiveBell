@@ -20,7 +20,10 @@ namespace LiveBell
             ResidentBox.IsChecked = Value.ResidentInTray;
             IntervalBox.Text = Value.IntervalSeconds.ToString();
             ToastSecondsBox.Text = Value.ToastSeconds.ToString();
+            HeaderSubtitleBox.Text = Value.HeaderSubtitle ?? "";
+            TaskbarLabelBox.Text = String.IsNullOrWhiteSpace(Value.TaskbarLabel) ? "开播铃" : Value.TaskbarLabel;
             UpdateSoundName();
+            UpdateAvatarPreview();
         }
 
         private void Save_Click(object sender, RoutedEventArgs e)
@@ -37,12 +40,46 @@ namespace LiveBell
                 ErrorText.Text = "提醒停留时间请输入 3 到 3600 之间的数字。";
                 return;
             }
+            string taskbarLabel = (TaskbarLabelBox.Text ?? "").Trim();
+            if (taskbarLabel.Length == 0)
+            {
+                ErrorText.Text = "任务栏与托盘标签不能为空。";
+                return;
+            }
             Value.WindowsNotification = WindowsNoticeBox.IsChecked == true;
             Value.AutoStart = AutoStartBox.IsChecked == true;
             Value.ResidentInTray = ResidentBox.IsChecked == true;
             Value.IntervalSeconds = interval;
             Value.ToastSeconds = toastSeconds;
+            Value.HeaderSubtitle = (HeaderSubtitleBox.Text ?? "").Trim();
+            Value.TaskbarLabel = taskbarLabel;
             DialogResult = true;
+        }
+
+        private void ChooseAvatar_Click(object sender, RoutedEventArgs e)
+        {
+            OpenFileDialog picker = new OpenFileDialog();
+            picker.Title = "选择软件头像";
+            picker.Filter = "图片文件|*.png;*.jpg;*.jpeg;*.bmp;*.gif|所有文件|*.*";
+            if (picker.ShowDialog(this) != true) return;
+            try
+            {
+                if (ImageTools.Load(picker.FileName) == null) throw new InvalidOperationException("无法读取这张图片。");
+                Value.CustomAvatarPath = LocalData.ImportAppearanceAvatar(picker.FileName);
+                UpdateAvatarPreview();
+                ErrorText.Text = "";
+            }
+            catch (Exception ex)
+            {
+                ErrorText.Text = "头像添加失败：" + ex.Message;
+            }
+        }
+
+        private void ResetAvatar_Click(object sender, RoutedEventArgs e)
+        {
+            Value.CustomAvatarPath = "";
+            UpdateAvatarPreview();
+            ErrorText.Text = "";
         }
 
         private void ChooseSound_Click(object sender, RoutedEventArgs e)
@@ -73,6 +110,14 @@ namespace LiveBell
             SoundNameText.Text = !String.IsNullOrWhiteSpace(Value.CustomSoundPath) && File.Exists(Value.CustomSoundPath)
                 ? Path.GetFileName(Value.CustomSoundPath)
                 : "未选择，使用系统提示音";
+        }
+
+        private void UpdateAvatarPreview()
+        {
+            string avatarPath = !String.IsNullOrWhiteSpace(Value.CustomAvatarPath) && File.Exists(Value.CustomAvatarPath)
+                ? Value.CustomAvatarPath
+                : LocalData.DefaultAppAvatar;
+            AvatarPreviewBrush.ImageSource = ImageTools.Load(avatarPath);
         }
 
         private void Cancel_Click(object sender, RoutedEventArgs e)
