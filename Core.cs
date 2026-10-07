@@ -349,7 +349,7 @@ namespace LiveBell
                 Dictionary<string, object> detail = null;
                 try
                 {
-                    Dictionary<string, object> source = GetJson("https://www.douyu.com/betard/" + Uri.EscapeDataString(detailRoomId), referer);
+                    Dictionary<string, object> source = GetJson("https://www.douyu.com/betard/" + Uri.EscapeDataString(detailRoomId), referer, true);
                     detail = FirstObject(Object(source, "room"), Object(Object(source, "data"), "room"), Object(source, "data"));
                 }
                 catch { }
@@ -380,7 +380,7 @@ namespace LiveBell
             bool fromBetard = true;
             try
             {
-                Dictionary<string, object> source = GetJson("https://www.douyu.com/betard/" + Uri.EscapeDataString(roomId), referer);
+                Dictionary<string, object> source = GetJson("https://www.douyu.com/betard/" + Uri.EscapeDataString(roomId), referer, true);
                 room = FirstObject(Object(source, "room"), Object(Object(source, "data"), "room"), Object(source, "data"));
             }
             catch
@@ -412,14 +412,20 @@ namespace LiveBell
             };
         }
 
-        private static Dictionary<string, object> GetJson(string url, string referer)
+        private static Dictionary<string, object> GetJson(string url, string referer, bool freshStatus = false)
         {
-            return JsonObject(GetText(url, referer));
+            return JsonObject(GetText(url, referer, freshStatus));
         }
 
-        private static string GetText(string url, string referer)
+        private static string GetText(string url, string referer, bool freshStatus = false)
         {
             ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+            if (freshStatus)
+            {
+                // Douyu caches room detail responses for 60 seconds, including
+                // the old live/loop state immediately after a broadcast ends.
+                url += (url.IndexOf('?') >= 0 ? "&" : "?") + "_livebell=" + Guid.NewGuid().ToString("N");
+            }
             using (NativeWebClient client = new NativeWebClient())
             {
                 client.Encoding = System.Text.Encoding.UTF8;
@@ -427,6 +433,12 @@ namespace LiveBell
                 client.Headers[HttpRequestHeader.Accept] = "application/json, text/plain, */*";
                 client.Headers[HttpRequestHeader.AcceptLanguage] = "zh-CN,zh;q=0.9";
                 client.Headers[HttpRequestHeader.Referer] = referer;
+                if (freshStatus)
+                {
+                    client.CachePolicy = new System.Net.Cache.RequestCachePolicy(System.Net.Cache.RequestCacheLevel.NoCacheNoStore);
+                    client.Headers[HttpRequestHeader.CacheControl] = "no-cache, no-store";
+                    client.Headers[HttpRequestHeader.Pragma] = "no-cache";
+                }
                 return client.DownloadString(url);
             }
         }
