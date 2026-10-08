@@ -29,7 +29,14 @@ namespace LiveBell
 
             activateEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ActivateEventName);
             activateWait = ThreadPool.RegisterWaitForSingleObject(activateEvent, OnActivateRequested, null, -1, false);
-            MainWindow window = new MainWindow();
+            MainWindow window;
+            try { window = new MainWindow(); }
+            catch (Exception ex)
+            {
+                MessageBox.Show(ex.Message, "开播铃无法启动", MessageBoxButton.OK, MessageBoxImage.Warning);
+                Shutdown();
+                return;
+            }
             MainWindow = window;
             window.StartMonitoring();
             if (!e.Args.Contains("--background", StringComparer.OrdinalIgnoreCase))

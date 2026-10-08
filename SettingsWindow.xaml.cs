@@ -9,11 +9,16 @@ namespace LiveBell
     public partial class SettingsWindow : Window
     {
         public AppSettings Value { get; private set; }
+        private readonly string originalAvatarPath;
+        private readonly string originalSoundPath;
 
         public SettingsWindow(AppSettings current)
         {
             InitializeComponent();
+            Height = Math.Min(690, SystemParameters.WorkArea.Height - 32);
             Value = current.Copy();
+            originalAvatarPath = Value.CustomAvatarPath;
+            originalSoundPath = Value.CustomSoundPath;
             SoftwareNoticeBox.IsChecked = !Value.WindowsNotification;
             WindowsNoticeBox.IsChecked = Value.WindowsNotification;
             AutoStartBox.IsChecked = Value.AutoStart;
@@ -53,6 +58,14 @@ namespace LiveBell
             Value.ToastSeconds = toastSeconds;
             Value.HeaderSubtitle = (HeaderSubtitleBox.Text ?? "").Trim();
             Value.TaskbarLabel = taskbarLabel;
+            try
+            {
+                if (!String.IsNullOrWhiteSpace(Value.CustomAvatarPath) && Value.CustomAvatarPath != originalAvatarPath)
+                    Value.CustomAvatarPath = LocalData.ImportAppearanceAvatar(Value.CustomAvatarPath);
+                if (!String.IsNullOrWhiteSpace(Value.CustomSoundPath) && Value.CustomSoundPath != originalSoundPath)
+                    Value.CustomSoundPath = LocalData.ImportSound(Value.CustomSoundPath);
+            }
+            catch (Exception ex) { ErrorText.Text = "无法保存所选文件：" + ex.Message; return; }
             DialogResult = true;
         }
 
@@ -65,7 +78,7 @@ namespace LiveBell
             try
             {
                 if (ImageTools.Load(picker.FileName) == null) throw new InvalidOperationException("无法读取这张图片。");
-                Value.CustomAvatarPath = LocalData.ImportAppearanceAvatar(picker.FileName);
+                Value.CustomAvatarPath = picker.FileName;
                 UpdateAvatarPreview();
                 ErrorText.Text = "";
             }
@@ -90,7 +103,7 @@ namespace LiveBell
             if (picker.ShowDialog(this) != true) return;
             try
             {
-                Value.CustomSoundPath = LocalData.ImportSound(picker.FileName);
+                Value.CustomSoundPath = picker.FileName;
                 UpdateSoundName();
                 ErrorText.Text = "";
             }
@@ -103,6 +116,16 @@ namespace LiveBell
         private void PreviewSound_Click(object sender, RoutedEventArgs e)
         {
             SoundService.Play(Value.CustomSoundPath);
+        }
+
+        private void TestNotice_Click(object sender, RoutedEventArgs e)
+        {
+            int seconds;
+            if (!Int32.TryParse(ToastSecondsBox.Text, out seconds) || seconds < 3 || seconds > 3600)
+            { ErrorText.Text = "提醒停留时间请输入 3 到 3600 之间的数字。"; return; }
+            Streamer sample = new Streamer { Name = "开播铃", Title = "你关注的主播开播时，会在这里提醒你" };
+            sample.AvatarPath = !String.IsNullOrWhiteSpace(Value.CustomAvatarPath) ? Value.CustomAvatarPath : LocalData.DefaultAppAvatar;
+            new LiveToast(sample, seconds, true).Show();
         }
 
         private void UpdateSoundName()

@@ -4,6 +4,80 @@
     <Application.Resources>
         <SolidColorBrush x:Key="TextBrush" Color="#1F2A44"/>
         <SolidColorBrush x:Key="MutedBrush" Color="#71809A"/>
+        <Style x:Key="ScrollPageArea" TargetType="RepeatButton">
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="IsTabStop" Value="False"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RepeatButton">
+                <Border Background="Transparent"/>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
+        <Style x:Key="RoundedScrollThumb" TargetType="Thumb">
+            <Setter Property="Background" Value="#CDD5E3"/>
+            <Setter Property="Width" Value="6"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="MinHeight" Value="26"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Thumb">
+                <Border Background="{TemplateBinding Background}" CornerRadius="4"/>
+            </ControlTemplate></Setter.Value></Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True"><Setter Property="Background" Value="#EDABC5"/></Trigger>
+                <Trigger Property="IsDragging" Value="True"><Setter Property="Background" Value="#F75B91"/></Trigger>
+            </Style.Triggers>
+        </Style>
+        <ControlTemplate x:Key="VerticalRoundedScrollBar" TargetType="ScrollBar">
+            <Grid Background="Transparent">
+                <Border Width="4" Background="#EFF1F6" CornerRadius="2" Margin="0,3" HorizontalAlignment="Center"/>
+                <Track x:Name="PART_Track" Orientation="Vertical" IsDirectionReversed="True"
+                       Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}" ViewportSize="{TemplateBinding ViewportSize}"
+                       Value="{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" Margin="0,3">
+                    <Track.DecreaseRepeatButton><RepeatButton Style="{StaticResource ScrollPageArea}" Command="{x:Static ScrollBar.PageUpCommand}"/></Track.DecreaseRepeatButton>
+                    <Track.Thumb><Thumb Style="{StaticResource RoundedScrollThumb}"/></Track.Thumb>
+                    <Track.IncreaseRepeatButton><RepeatButton Style="{StaticResource ScrollPageArea}" Command="{x:Static ScrollBar.PageDownCommand}"/></Track.IncreaseRepeatButton>
+                </Track>
+            </Grid>
+        </ControlTemplate>
+        <ControlTemplate x:Key="HorizontalRoundedScrollBar" TargetType="ScrollBar">
+            <Grid Background="Transparent">
+                <Border Height="4" Background="#EFF1F6" CornerRadius="2" Margin="3,0" VerticalAlignment="Center"/>
+                <Track x:Name="PART_Track" Orientation="Horizontal" IsDirectionReversed="False"
+                       Minimum="{TemplateBinding Minimum}" Maximum="{TemplateBinding Maximum}" ViewportSize="{TemplateBinding ViewportSize}"
+                       Value="{Binding Value, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}" Margin="3,0">
+                    <Track.DecreaseRepeatButton><RepeatButton Style="{StaticResource ScrollPageArea}" Command="{x:Static ScrollBar.PageLeftCommand}"/></Track.DecreaseRepeatButton>
+                    <Track.Thumb><Thumb Style="{StaticResource RoundedScrollThumb}" Width="Auto" Height="6" Margin="0" MinHeight="0" MinWidth="26"/></Track.Thumb>
+                    <Track.IncreaseRepeatButton><RepeatButton Style="{StaticResource ScrollPageArea}" Command="{x:Static ScrollBar.PageRightCommand}"/></Track.IncreaseRepeatButton>
+                </Track>
+            </Grid>
+        </ControlTemplate>
+        <Style TargetType="ScrollBar">
+            <Setter Property="Width" Value="12"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="IsTabStop" Value="False"/>
+            <Setter Property="Template" Value="{StaticResource VerticalRoundedScrollBar}"/>
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Width" Value="Auto"/><Setter Property="Height" Value="12"/>
+                    <Setter Property="Template" Value="{StaticResource HorizontalRoundedScrollBar}"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        <Style TargetType="ContextMenu">
+            <Setter Property="FontFamily" Value="Microsoft YaHei UI"/><Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="#27344D"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="ContextMenu">
+                <Border Background="White" CornerRadius="12" BorderBrush="#E5E9F1" BorderThickness="1" Padding="6"><ItemsPresenter/></Border>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
+        <Style TargetType="MenuItem">
+            <Setter Property="Padding" Value="16,9"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="MenuItem">
+                <Border x:Name="Item" CornerRadius="7" Padding="{TemplateBinding Padding}" Background="Transparent"><ContentPresenter ContentSource="Header"/></Border>
+                <ControlTemplate.Triggers>
+                    <Trigger Property="IsHighlighted" Value="True"><Setter TargetName="Item" Property="Background" Value="#FFF0F6"/></Trigger>
+                    <Trigger Property="IsEnabled" Value="False"><Setter TargetName="Item" Property="Opacity" Value=".4"/></Trigger>
+                </ControlTemplate.Triggers>
+            </ControlTemplate></Setter.Value></Setter>
+        </Style>
         <Style TargetType="Button">
             <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>
             <Setter Property="FontSize" Value="13"/>
@@ -52,6 +126,17 @@
             <Setter Property="BorderBrush" Value="#DCE3EE"/>
             <Setter Property="BorderThickness" Value="1"/>
             <Setter Property="Background" Value="#FBFCFF"/>
+            <Setter Property="Foreground" Value="#27344D"/>
+            <Setter Property="Template"><Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <Border x:Name="InputBorder" Background="{TemplateBinding Background}" CornerRadius="11" BorderThickness="{TemplateBinding BorderThickness}" BorderBrush="{TemplateBinding BorderBrush}">
+                        <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsKeyboardFocusWithin" Value="True"><Setter TargetName="InputBorder" Property="BorderBrush" Value="#F49CBD"/></Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value></Setter>
         </Style>
         <Style TargetType="ComboBox">
             <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>

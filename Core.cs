@@ -71,7 +71,7 @@ namespace LiveBell
         public string Title { get { return _title; } set { _title = value; Changed("Title"); } }
         public string State { get { return _state; } set { _state = value; Changed("State"); Changed("StateText"); Changed("StateBrush"); } }
         public string AvatarUrl = "";
-        public string AvatarPath { get { return _avatarPath; } set { _avatarPath = value ?? ""; Changed("AvatarPath"); LoadAvatar(); } }
+        public string AvatarPath { get { return _avatarPath; } set { string path = value ?? ""; if (_avatarPath == path && _avatarImage != null) return; _avatarPath = path; Changed("AvatarPath"); LoadAvatar(); } }
         public string Url = "";
         public string CustomSoundPath = "";
         public bool IsCheckingEnabled
@@ -88,6 +88,9 @@ namespace LiveBell
         }
         public bool IsLive;
         public bool HasChecked;
+        // Unknown responses are not offline transitions.
+        [ScriptIgnore] public bool HasKnownState;
+        [ScriptIgnore] public bool LastKnownLive;
         public string LastError = "";
         [ScriptIgnore]
         public ImageSource AvatarImage { get { return _avatarImage; } private set { _avatarImage = value; Changed("AvatarImage"); } }
@@ -119,6 +122,21 @@ namespace LiveBell
             AvatarImage = ImageTools.Load(AvatarPath);
         }
 
+        public bool AcceptLiveState(bool live, bool confirmed, bool loop, bool forceNotice)
+        {
+            bool actualLive = confirmed && !loop && live;
+            bool notify = actualLive && (forceNotice || !HasKnownState || !LastKnownLive);
+            IsLive = actualLive;
+            HasChecked = confirmed;
+            if (confirmed || loop)
+            {
+                HasKnownState = true;
+                LastKnownLive = actualLive;
+            }
+            State = loop ? "视频轮播" : (!confirmed ? "状态待确认" : (actualLive ? "直播中" : "未开播"));
+            return notify;
+        }
+
         private void Changed(string name)
         {
             PropertyChangedEventHandler changed = PropertyChanged;
@@ -138,6 +156,8 @@ namespace LiveBell
                 BitmapImage image = new BitmapImage();
                 image.BeginInit();
                 image.CacheOption = BitmapCacheOption.OnLoad;
+                image.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
+                image.DecodePixelWidth = 128;
                 image.UriSource = new Uri(path, UriKind.Absolute);
                 image.EndInit();
                 image.Freeze();
@@ -159,11 +179,13 @@ namespace LiveBell
 
         public static AppState Load()
         {
+            foreach (string file in new[] { StateFile, StateFile + ".bak" })
+            {
             try
             {
-                if (File.Exists(StateFile))
+                if (File.Exists(file))
                 {
-                    AppState state = Json.Deserialize<AppState>(File.ReadAllText(StateFile));
+                    AppState state = Json.Deserialize<AppState>(File.ReadAllText(file));
                     if (state != null)
                     {
                         if (state.Settings == null) state.Settings = new AppSettings();
@@ -172,11 +194,18 @@ namespace LiveBell
                         if (state.Settings.HeaderSubtitle == null) state.Settings.HeaderSubtitle = "露露卡妈妈提醒你看直播了";
                         if (String.IsNullOrWhiteSpace(state.Settings.TaskbarLabel)) state.Settings.TaskbarLabel = "开播铃";
                         if (state.Streamers == null) state.Streamers = new List<Streamer>();
+                        state.Settings.CustomAvatarPath = ResolveAsset(state.Settings.CustomAvatarPath, AppearanceFolder);
+                        state.Settings.CustomSoundPath = ResolveAsset(state.Settings.CustomSoundPath, SoundFolder);
+                        foreach (Streamer streamer in state.Streamers)
+                            streamer.CustomSoundPath = ResolveAsset(streamer.CustomSoundPath, SoundFolder);
                         return state;
                     }
                 }
             }
             catch { }
+            }
+            if (File.Exists(StateFile) || File.Exists(StateFile + ".bak"))
+                throw new InvalidDataException("关注列表暂时无法读取。请保留 Data 文件夹，避免覆盖原有数据。");
             return new AppState();
         }
 
@@ -184,12 +213,26 @@ namespace LiveBell
         {
             Directory.CreateDirectory(Root);
             Directory.CreateDirectory(AvatarFolder);
-            File.WriteAllText(StateFile, Json.Serialize(state));
+            string temporary = StateFile + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                File.WriteAllText(temporary, Json.Serialize(state));
+                if (File.Exists(StateFile)) File.Replace(temporary, StateFile, StateFile + ".bak");
+                else File.Move(temporary, StateFile);
+            }
+            finally { if (File.Exists(temporary)) File.Delete(temporary); }
         }
 
         public static string AvatarFile(Streamer item)
         {
             return Path.Combine(AvatarFolder, item.Id + ".image");
+        }
+
+        private static string ResolveAsset(string path, string folder)
+        {
+            if (String.IsNullOrWhiteSpace(path)) return "";
+            string local = Path.Combine(folder, Path.GetFileName(path));
+            return File.Exists(local) ? local : path;
         }
 
         public static string ImportSound(string sourceFile, string soundName = "提醒声音")
@@ -199,7 +242,7 @@ namespace LiveBell
             string extension = Path.GetExtension(sourceFile);
             if (String.IsNullOrWhiteSpace(extension)) extension = ".wav";
             Directory.CreateDirectory(SoundFolder);
-            string target = Path.Combine(SoundFolder, soundName + extension);
+            string target = Path.Combine(SoundFolder, soundName + "_" + Guid.NewGuid().ToString("N").Substring(0, 8) + extension);
             File.Copy(sourceFile, target, true);
             return target;
         }
@@ -211,7 +254,7 @@ namespace LiveBell
             string extension = Path.GetExtension(sourceFile);
             if (String.IsNullOrWhiteSpace(extension)) extension = ".png";
             Directory.CreateDirectory(AppearanceFolder);
-            string target = Path.Combine(AppearanceFolder, "自定义头像" + extension.ToLowerInvariant());
+            string target = Path.Combine(AppearanceFolder, "自定义头像_" + Guid.NewGuid().ToString("N").Substring(0, 8) + extension.ToLowerInvariant());
             if (!String.Equals(Path.GetFullPath(sourceFile), Path.GetFullPath(target), StringComparison.OrdinalIgnoreCase))
                 File.Copy(sourceFile, target, true);
             return target;
@@ -238,8 +281,8 @@ namespace LiveBell
     // 直播检测完全由 .NET 完成，不需要随软件携带 node.exe。
     internal static class RoomClient
     {
+        static RoomClient() { ServicePointManager.DefaultConnectionLimit = Math.Max(6, ServicePointManager.DefaultConnectionLimit); }
         private const string UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36";
-        private static readonly JavaScriptSerializer Json = new JavaScriptSerializer();
 
         public static Task<RoomResult> QueryAsync(Streamer streamer)
         {
@@ -456,7 +499,7 @@ namespace LiveBell
 
         private static Dictionary<string, object> JsonObject(string text)
         {
-            Dictionary<string, object> value = Json.DeserializeObject(text) as Dictionary<string, object>;
+            Dictionary<string, object> value = new JavaScriptSerializer().DeserializeObject(text) as Dictionary<string, object>;
             if (value == null) throw new InvalidOperationException("平台暂时没有返回直播间数据。 ");
             return value;
         }
@@ -721,10 +764,10 @@ namespace LiveBell
         [DllImport("user32.dll", EntryPoint = "SetWindowLong", SetLastError = true)]
         private static extern int SetWindowLong32(IntPtr windowHandle, int index, int value);
 
-        public LiveToast(Streamer streamer, int displaySeconds)
+        public LiveToast(Streamer streamer, int displaySeconds, bool preview = false)
         {
-            Width = 365;
-            Height = 124;
+            Width = 390;
+            Height = 136;
             WindowStyle = System.Windows.WindowStyle.None;
             ResizeMode = System.Windows.ResizeMode.NoResize;
             AllowsTransparency = true;
@@ -748,13 +791,20 @@ namespace LiveBell
             grid.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new System.Windows.GridLength(64) });
             grid.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new System.Windows.GridLength(1, System.Windows.GridUnitType.Star) });
             System.Windows.Shapes.Ellipse photo = new System.Windows.Shapes.Ellipse { Width = 58, Height = 58, Fill = new SolidColorBrush(System.Windows.Media.Color.FromRgb(232, 240, 255)) };
-            if (streamer.AvatarImage != null) photo.Fill = new ImageBrush(streamer.AvatarImage) { Stretch = Stretch.UniformToFill };
+            grid.Children.Add(new System.Windows.Shapes.Ellipse { Width = 58, Height = 58, Fill = photo.Fill });
+            ImageBrush avatarBrush = new ImageBrush { Stretch = Stretch.UniformToFill };
+            System.Windows.Data.BindingOperations.SetBinding(avatarBrush, ImageBrush.ImageSourceProperty, new System.Windows.Data.Binding("AvatarImage") { Source = streamer });
+            photo.Fill = avatarBrush;
             grid.Children.Add(photo);
             System.Windows.Controls.StackPanel words = new System.Windows.Controls.StackPanel { VerticalAlignment = System.Windows.VerticalAlignment.Center, HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch };
             System.Windows.Controls.TextBlock title = new System.Windows.Controls.TextBlock { Text = streamer.Name + " 开播了", FontFamily = new System.Windows.Media.FontFamily("Microsoft YaHei UI"), FontSize = 17, FontWeight = System.Windows.FontWeights.Bold, Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(33, 44, 66)), TextTrimming = System.Windows.TextTrimming.CharacterEllipsis, HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch, TextAlignment = System.Windows.TextAlignment.Center };
             System.Windows.Controls.TextBlock detail = new System.Windows.Controls.TextBlock { Text = streamer.Title, FontFamily = new System.Windows.Media.FontFamily("Microsoft YaHei UI"), FontSize = 12, Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(100, 115, 140)), TextTrimming = System.Windows.TextTrimming.CharacterEllipsis, Margin = new System.Windows.Thickness(0, 6, 0, 0), HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch, TextAlignment = System.Windows.TextAlignment.Center };
             System.Windows.Controls.TextBlock openHint = new System.Windows.Controls.TextBlock { Text = "点击进入直播间", FontFamily = new System.Windows.Media.FontFamily("Microsoft YaHei UI"), FontSize = 11, FontWeight = System.Windows.FontWeights.SemiBold, Foreground = new SolidColorBrush(System.Windows.Media.Color.FromRgb(240, 91, 141)), Margin = new System.Windows.Thickness(0, 4, 0, 0), HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch, TextAlignment = System.Windows.TextAlignment.Center };
             words.Children.Add(title); words.Children.Add(detail); words.Children.Add(openHint);
+            title.FontSize = 18;
+            detail.FontSize = 13;
+            openHint.FontSize = 12;
+            if (preview) { title.Text = "提醒效果预览"; openHint.Text = "这是测试提醒 · 点击关闭"; }
             System.Windows.Controls.Grid.SetColumn(words, 1);
             grid.Children.Add(words);
             root.Child = grid;
@@ -766,7 +816,7 @@ namespace LiveBell
             timer.Start();
             Loaded += delegate { AddToStack(this); };
             Closed += delegate { timer.Stop(); RemoveFromStack(this); };
-            MouseLeftButtonDown += delegate { OpenLiveRoom(streamer); Close(); };
+            MouseLeftButtonDown += delegate { if (!preview) OpenLiveRoom(streamer); Close(); };
         }
 
         private void PreventActivation()

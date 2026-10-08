@@ -9,6 +9,9 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using System.Windows.Data;
+using System.Threading;
+using System.Threading.Tasks;
 using Forms = System.Windows.Forms;
 
 namespace LiveBell
@@ -23,8 +26,22 @@ namespace LiveBell
         private bool exiting;
         private Streamer selectedStreamer;
         private Streamer latestWindowsNoticeStreamer;
+        private readonly SemaphoreSlim querySlots = new SemaphoreSlim(3);
+        private readonly SemaphoreSlim avatarSlots = new SemaphoreSlim(2);
+        private readonly HashSet<string> pendingRooms = new HashSet<string>();
+        private readonly HashSet<string> pendingAvatars = new HashSet<string>();
+        private readonly Dictionary<string, DateTime> avatarRetryAfter = new Dictionary<string, DateTime>();
+        private string searchText = "";
+        private string filterMode = "all";
+        private string saveError = "";
 
         public ObservableCollection<Streamer> Streamers { get; private set; }
+        public ICollectionView StreamersView { get; private set; }
+        public string SearchText
+        {
+            get { return searchText; }
+            set { searchText = value ?? ""; Changed("SearchText"); UpdateStatus(); }
+        }
         public Streamer SelectedStreamer
         {
             get { return selectedStreamer; }
@@ -34,15 +51,20 @@ namespace LiveBell
         public MainWindow()
         {
             InitializeComponent();
-            DataContext = this;
             Directory.CreateDirectory(LocalData.AvatarFolder);
             state = LocalData.Load();
             Streamers = new ObservableCollection<Streamer>(state.Streamers);
             foreach (Streamer streamer in Streamers)
             {
+                streamer.IsLive = false;
+                streamer.HasKnownState = false;
+                streamer.State = streamer.IsCheckingEnabled ? "等待检查" : "检查已暂停";
                 string avatar = LocalData.AvatarFile(streamer);
                 streamer.AvatarPath = File.Exists(avatar) ? avatar : "";
             }
+            StreamersView = CollectionViewSource.GetDefaultView(Streamers);
+            StreamersView.Filter = MatchesFilter;
+            DataContext = this;
 
             tray = new Forms.NotifyIcon();
             tray.Icon = TrayIconFactory.GetAvatar(state.Settings.CustomAvatarPath);
@@ -64,13 +86,13 @@ namespace LiveBell
             UpdateStatus();
         }
 
-        public void StartMonitoring()
+        public async void StartMonitoring()
         {
             monitorTimer.Start();
             // Only the rooms that already exist when the program starts may send
             // the startup reminder.  A later-added room sends its own reminder,
             // but must not be treated as another "first pass" by the timer.
-            RefreshAllAsync(false, true);
+            await RefreshAllAsync(false, true);
         }
 
         private async void Add_Click(object sender, RoutedEventArgs e)
@@ -101,7 +123,7 @@ namespace LiveBell
 
         private async void RefreshOne_Click(object sender, RoutedEventArgs e)
         {
-            Button button = sender as Button;
+            FrameworkElement button = sender as FrameworkElement;
             Streamer streamer = button == null ? null : button.DataContext as Streamer;
             if (streamer != null) await RefreshOneAsync(streamer, false);
             UpdateStatus();
@@ -117,6 +139,7 @@ namespace LiveBell
                 streamer.IsCheckingEnabled = false;
                 streamer.IsLive = false;
                 streamer.HasChecked = false;
+                streamer.HasKnownState = false;
                 streamer.State = "检查已暂停";
                 streamer.LastError = "";
                 Save();
@@ -133,7 +156,7 @@ namespace LiveBell
 
         private void Sound_Click(object sender, RoutedEventArgs e)
         {
-            Button button = sender as Button;
+            FrameworkElement button = sender as FrameworkElement;
             Streamer streamer = button == null ? null : button.DataContext as Streamer;
             if (streamer == null) return;
             StreamerSoundWindow dialog = new StreamerSoundWindow(streamer, state.Settings.CustomSoundPath);
@@ -145,14 +168,14 @@ namespace LiveBell
 
         private void Open_Click(object sender, RoutedEventArgs e)
         {
-            Button button = sender as Button;
+            FrameworkElement button = sender as FrameworkElement;
             Streamer streamer = button == null ? null : button.DataContext as Streamer;
             OpenStreamer(streamer);
         }
 
         private void Delete_Click(object sender, RoutedEventArgs e)
         {
-            Button button = sender as Button;
+            FrameworkElement button = sender as FrameworkElement;
             Streamer streamer = button == null ? null : button.DataContext as Streamer;
             if (streamer == null) return;
             ConfirmDeleteWindow confirm = new ConfirmDeleteWindow(streamer.Name);
@@ -164,9 +187,41 @@ namespace LiveBell
             UpdateStatus();
         }
 
-        private async void Grid_DoubleClick(object sender, MouseButtonEventArgs e)
+        private void Grid_DoubleClick(object sender, MouseButtonEventArgs e)
         {
-            if (SelectedStreamer != null) await RefreshOneAsync(SelectedStreamer, false);
+            DependencyObject element = e.OriginalSource as DependencyObject;
+            while (element != null && !(element is DataGridRow))
+            {
+                if (element is Button) return;
+                element = System.Windows.Media.VisualTreeHelper.GetParent(element);
+            }
+            DataGridRow row = ItemsControl.ContainerFromElement(StreamersGrid, e.OriginalSource as DependencyObject) as DataGridRow;
+            if (row != null) OpenStreamer(row.Item as Streamer);
+        }
+
+        private void More_Click(object sender, RoutedEventArgs e)
+        {
+            Button button = sender as Button;
+            if (button == null || button.ContextMenu == null) return;
+            button.ContextMenu.PlacementTarget = button;
+            button.ContextMenu.IsOpen = true;
+        }
+
+        private bool MatchesFilter(object item)
+        {
+            Streamer streamer = item as Streamer;
+            if (streamer == null) return false;
+            if (filterMode == "live" && !streamer.IsLive) return false;
+            if (filterMode == "paused" && streamer.IsCheckingEnabled) return false;
+            string term = searchText.Trim();
+            return term.Length == 0 || ((streamer.Name ?? "") + " " + streamer.PlatformText + " " + streamer.RoomId).IndexOf(term, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private void Filter_Click(object sender, RoutedEventArgs e)
+        {
+            FrameworkElement button = sender as FrameworkElement;
+            filterMode = button == null ? "all" : (string)button.Tag;
+            UpdateStatus();
         }
 
         private void Settings_Click(object sender, RoutedEventArgs e)
@@ -196,25 +251,7 @@ namespace LiveBell
             try
             {
                 if (copy.Length == 0) return;
-                List<RoomResult> results = await RoomClient.QueryManyAsync(copy);
-                for (int i = 0; i < copy.Length; i++)
-                {
-                    try
-                    {
-                        RoomResult result = i < results.Count ? results[i] : null;
-                        await ApplyResultAsync(copy[i], result, true, notifyAlreadyLive);
-                    }
-                    catch (Exception ex)
-                    {
-                        SetConnectionError(copy[i], ex);
-                    }
-                }
-                if (copy.Length > 0) Save();
-            }
-            catch (Exception ex)
-            {
-                foreach (Streamer streamer in copy) SetConnectionError(streamer, ex);
-                if (copy.Length > 0) Save();
+                await Task.WhenAll(copy.Select(x => RefreshOneAsync(x, true, notifyAlreadyLive)));
             }
             finally
             {
@@ -225,21 +262,30 @@ namespace LiveBell
 
         private async System.Threading.Tasks.Task RefreshOneAsync(Streamer streamer, bool sendNotice, bool notifyAlreadyLive = false)
         {
-            if (!Streamers.Contains(streamer)) return;
-            streamer.State = "读取中";
+            if (!Streamers.Contains(streamer) || !streamer.IsCheckingEnabled || !pendingRooms.Add(streamer.Id)) return;
+            if (!streamer.HasKnownState) streamer.State = "读取中";
             try
             {
-                RoomResult result = await RoomClient.QueryAsync(streamer);
+                RoomResult result;
+                await querySlots.WaitAsync();
+                try
+                {
+                    if (exiting || !Streamers.Contains(streamer) || !streamer.IsCheckingEnabled) return;
+                    result = await RoomClient.QueryAsync(streamer);
+                }
+                finally { querySlots.Release(); }
+                if (exiting || !Streamers.Contains(streamer)) return;
                 await ApplyResultAsync(streamer, result, sendNotice, notifyAlreadyLive);
                 Save();
             }
             catch (Exception ex)
             {
-                SetConnectionError(streamer, ex);
+                if (Streamers.Contains(streamer)) SetConnectionError(streamer, ex);
             }
+            finally { pendingRooms.Remove(streamer.Id); if (!exiting) UpdateStatus(); }
         }
 
-        private async System.Threading.Tasks.Task ApplyResultAsync(Streamer streamer, RoomResult result, bool sendNotice, bool notifyAlreadyLive)
+        private System.Threading.Tasks.Task ApplyResultAsync(Streamer streamer, RoomResult result, bool sendNotice, bool notifyAlreadyLive)
         {
             if (result == null || !result.ok)
                 throw new InvalidOperationException(result == null ? "平台没有返回直播间数据。" : Value(result.message, "平台暂时无法读取直播间。"));
@@ -250,27 +296,45 @@ namespace LiveBell
             streamer.Url = Value(result.url, streamer.Url);
             streamer.AvatarUrl = Value(result.avatarUrl, streamer.AvatarUrl);
             streamer.LastError = "";
-            string avatar = LocalData.AvatarFile(streamer);
-            if (!String.IsNullOrWhiteSpace(streamer.AvatarUrl) && (oldAvatarUrl != streamer.AvatarUrl || !File.Exists(avatar)))
-                    await RoomClient.DownloadAvatarAsync(streamer.AvatarUrl, avatar);
-            if (File.Exists(avatar)) streamer.AvatarPath = avatar;
-
             if (!streamer.IsCheckingEnabled)
             {
                 streamer.IsLive = false;
                 streamer.HasChecked = false;
                 streamer.State = "检查已暂停";
-                return;
+                return Task.FromResult(0);
             }
 
-            bool isActualLive = result.liveConfirmed && !result.videoLoop && result.isLive;
-            bool shouldNotify = sendNotice && isActualLive && (notifyAlreadyLive || !streamer.HasChecked || !streamer.IsLive);
-            streamer.IsLive = isActualLive;
-            streamer.HasChecked = result.liveConfirmed;
-            if (result.videoLoop) streamer.State = "视频轮播";
-            else if (!result.liveConfirmed) streamer.State = "状态待确认";
-            else streamer.State = isActualLive ? "直播中" : "未开播";
-            if (shouldNotify) SendNotification(streamer);
+            bool shouldNotify = streamer.AcceptLiveState(result.isLive, result.liveConfirmed, result.videoLoop, notifyAlreadyLive);
+            if (sendNotice && shouldNotify) SendNotification(streamer);
+            UpdateAvatarInBackground(streamer, oldAvatarUrl != streamer.AvatarUrl);
+            return Task.FromResult(0);
+        }
+
+        private async void UpdateAvatarInBackground(Streamer streamer, bool changedUrl)
+        {
+            string avatar = LocalData.AvatarFile(streamer);
+            if (File.Exists(avatar) && !changedUrl) { streamer.AvatarPath = avatar; return; }
+            DateTime retry;
+            if (String.IsNullOrWhiteSpace(streamer.AvatarUrl) || (!changedUrl && avatarRetryAfter.TryGetValue(streamer.Id, out retry) && retry > DateTime.UtcNow) || !pendingAvatars.Add(streamer.Id)) return;
+            try
+            {
+                await avatarSlots.WaitAsync();
+                try
+                {
+                    if (exiting || !Streamers.Contains(streamer)) return;
+                    await RoomClient.DownloadAvatarAsync(streamer.AvatarUrl, avatar);
+                }
+                finally { avatarSlots.Release(); }
+                if (!exiting && Streamers.Contains(streamer))
+                {
+                    bool samePath = streamer.AvatarPath == avatar;
+                    streamer.AvatarPath = avatar;
+                    if (samePath) streamer.LoadAvatar();
+                }
+                avatarRetryAfter.Remove(streamer.Id);
+            }
+            catch { avatarRetryAfter[streamer.Id] = DateTime.UtcNow.AddMinutes(5); }
+            finally { pendingAvatars.Remove(streamer.Id); }
         }
 
         private static void SetConnectionError(Streamer streamer, Exception ex)
@@ -281,6 +345,7 @@ namespace LiveBell
                 return;
             }
             streamer.LastError = ex == null ? "" : ex.Message;
+            streamer.IsLive = false;
             streamer.State = "连接异常";
             streamer.Title = "暂时无法读取直播间";
         }
@@ -314,15 +379,21 @@ namespace LiveBell
 
         private void UpdateStatus()
         {
-            EmptyState.Visibility = Streamers.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            if (Streamers == null || StreamersView == null) return;
+            StreamersView.Refresh();
+            EmptyState.Visibility = StreamersView.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
+            EmptyTitle.Text = Streamers.Count == 0 ? "从第一位主播开始" : "没有匹配的主播";
+            EmptyHint.Text = Streamers.Count == 0 ? "添加房间号或直播间网址，开播时就会提醒你" : "试试其他搜索词，或切换到全部关注";
             int checkingCount = Streamers.Count(x => x.IsCheckingEnabled);
             int live = Streamers.Count(x => x.IsCheckingEnabled && x.IsLive);
-            StatusText.Text = "正在检查 " + checkingCount + " / " + Streamers.Count + " 位主播 · " + live + " 位直播中";
+            SummaryText.Text = Streamers.Count + " 位关注  ·  " + live + " 位直播中";
+            StatusText.Text = saveError.Length > 0 ? saveError : (checking ? "正在更新直播间状态…" : "正在监听 " + checkingCount + " 位主播  ·  每 " + state.Settings.IntervalSeconds + " 秒检查");
         }
 
         private void Save()
         {
-            LocalData.Save(state);
+            try { LocalData.Save(state); saveError = ""; }
+            catch { saveError = "设置未能保存，请检查文件夹是否可写"; }
         }
 
         private void ApplyAppearance()
@@ -384,6 +455,7 @@ namespace LiveBell
                 Hide();
                 return;
             }
+            exiting = true;
             monitorTimer.Stop();
             tray.Visible = false;
             tray.Dispose();

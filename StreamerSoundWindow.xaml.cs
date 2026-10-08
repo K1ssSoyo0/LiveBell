@@ -11,6 +11,7 @@ namespace LiveBell
         private readonly string defaultSoundPath;
         private readonly string streamerId;
         private string selectedSoundPath;
+        private readonly string originalSoundPath;
 
         public string CustomSoundPath { get { return selectedSoundPath; } }
 
@@ -20,6 +21,7 @@ namespace LiveBell
             defaultSoundPath = globalSoundPath ?? "";
             streamerId = String.IsNullOrWhiteSpace(streamer.Id) ? Guid.NewGuid().ToString("N") : streamer.Id;
             selectedSoundPath = streamer.CustomSoundPath ?? "";
+            originalSoundPath = selectedSoundPath;
             StreamerNameText.Text = streamer.Name + " 开播时使用的声音";
             UpdateSoundName();
         }
@@ -32,7 +34,7 @@ namespace LiveBell
             if (picker.ShowDialog(this) != true) return;
             try
             {
-                selectedSoundPath = LocalData.ImportSound(picker.FileName, "主播提醒_" + streamerId);
+                selectedSoundPath = picker.FileName;
                 ErrorText.Text = "";
                 UpdateSoundName();
             }
@@ -63,6 +65,12 @@ namespace LiveBell
 
         private void Save_Click(object sender, RoutedEventArgs e)
         {
+            try
+            {
+                if (!String.IsNullOrWhiteSpace(selectedSoundPath) && selectedSoundPath != originalSoundPath)
+                    selectedSoundPath = LocalData.ImportSound(selectedSoundPath, "主播提醒_" + streamerId);
+            }
+            catch (Exception ex) { ErrorText.Text = "声音保存失败：" + ex.Message; return; }
             DialogResult = true;
         }
 
