@@ -31,17 +31,11 @@ namespace LiveBell
         private readonly HashSet<string> pendingRooms = new HashSet<string>();
         private readonly HashSet<string> pendingAvatars = new HashSet<string>();
         private readonly Dictionary<string, DateTime> avatarRetryAfter = new Dictionary<string, DateTime>();
-        private string searchText = "";
         private string filterMode = "all";
         private string saveError = "";
 
         public ObservableCollection<Streamer> Streamers { get; private set; }
         public ICollectionView StreamersView { get; private set; }
-        public string SearchText
-        {
-            get { return searchText; }
-            set { searchText = value ?? ""; Changed("SearchText"); UpdateStatus(); }
-        }
         public Streamer SelectedStreamer
         {
             get { return selectedStreamer; }
@@ -213,8 +207,7 @@ namespace LiveBell
             if (streamer == null) return false;
             if (filterMode == "live" && !streamer.IsLive) return false;
             if (filterMode == "paused" && streamer.IsCheckingEnabled) return false;
-            string term = searchText.Trim();
-            return term.Length == 0 || ((streamer.Name ?? "") + " " + streamer.PlatformText + " " + streamer.RoomId).IndexOf(term, StringComparison.OrdinalIgnoreCase) >= 0;
+            return true;
         }
 
         private void Filter_Click(object sender, RoutedEventArgs e)
@@ -382,8 +375,8 @@ namespace LiveBell
             if (Streamers == null || StreamersView == null) return;
             StreamersView.Refresh();
             EmptyState.Visibility = StreamersView.IsEmpty ? Visibility.Visible : Visibility.Collapsed;
-            EmptyTitle.Text = Streamers.Count == 0 ? "从第一位主播开始" : "没有匹配的主播";
-            EmptyHint.Text = Streamers.Count == 0 ? "添加房间号或直播间网址，开播时就会提醒你" : "试试其他搜索词，或切换到全部关注";
+            EmptyTitle.Text = Streamers.Count == 0 ? "从第一位主播开始" : "这个分类暂无主播";
+            EmptyHint.Text = Streamers.Count == 0 ? "添加房间号或直播间网址，开播时就会提醒你" : "试试切换到全部关注";
             int checkingCount = Streamers.Count(x => x.IsCheckingEnabled);
             int live = Streamers.Count(x => x.IsCheckingEnabled && x.IsLive);
             SummaryText.Text = Streamers.Count + " 位关注  ·  " + live + " 位直播中";
