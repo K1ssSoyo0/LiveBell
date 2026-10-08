@@ -28,6 +28,7 @@ namespace LiveBell
     {
         public bool AutoStart = false;
         public bool ResidentInTray = true;
+        public bool LowMemoryRendering = true;
         public bool WindowsNotification = false;
         public int IntervalSeconds = 60;
         public int ToastSeconds = 8;
@@ -42,6 +43,7 @@ namespace LiveBell
             {
                 AutoStart = AutoStart,
                 ResidentInTray = ResidentInTray,
+                LowMemoryRendering = LowMemoryRendering,
                 WindowsNotification = WindowsNotification,
                 IntervalSeconds = IntervalSeconds,
                 ToastSeconds = ToastSeconds,
@@ -153,17 +155,31 @@ namespace LiveBell
             try
             {
                 if (String.IsNullOrWhiteSpace(path) || !File.Exists(path)) return null;
-                BitmapImage image = new BitmapImage();
-                image.BeginInit();
-                image.CacheOption = BitmapCacheOption.OnLoad;
-                image.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
-                image.DecodePixelWidth = 128;
-                image.UriSource = new Uri(path, UriKind.Absolute);
-                image.EndInit();
-                image.Freeze();
-                return image;
+                using (FileStream stream = File.OpenRead(path))
+                {
+                    BitmapImage image = new BitmapImage();
+                    image.BeginInit();
+                    image.CacheOption = BitmapCacheOption.OnLoad;
+                    image.DecodePixelWidth = 128;
+                    image.StreamSource = stream;
+                    image.EndInit();
+                    image.Freeze();
+                    return image;
+                }
             }
             catch { return null; }
+        }
+    }
+
+    internal static class RenderingPolicy
+    {
+        public static void Configure(AppSettings settings)
+        {
+            // This mostly-static tray utility does not need a dedicated graphics
+            // device's large buffers. Configure before creating the first window.
+            // Keep an opt-out for machines where software drawing feels slower.
+            RenderOptions.ProcessRenderMode = settings.LowMemoryRendering
+                ? RenderMode.SoftwareOnly : RenderMode.Default;
         }
     }
 
@@ -656,6 +672,12 @@ namespace LiveBell
 
         private static void PlayNext()
         {
+            ReleasePlayer();
+            if (systemSoundTimer != null)
+            {
+                systemSoundTimer.Stop();
+                systemSoundTimer = null;
+            }
             if (pendingSounds.Count == 0)
             {
                 playing = false;
@@ -667,27 +689,44 @@ namespace LiveBell
             {
                 if (!String.IsNullOrWhiteSpace(customPath) && File.Exists(customPath))
                 {
-                    if (player != null) player.Close();
                     player = new MediaPlayer();
-                    player.MediaEnded += delegate { PlayNext(); };
-                    player.MediaFailed += delegate { PlayNext(); };
+                    player.MediaEnded += OnMediaEnded;
+                    player.MediaFailed += OnMediaFailed;
                     player.Open(new Uri(customPath, UriKind.Absolute));
                     player.Volume = 1;
                     player.Play();
                     return;
                 }
             }
-            catch { }
+            catch { ReleasePlayer(); }
             try { System.Media.SystemSounds.Asterisk.Play(); } catch { }
-            if (systemSoundTimer != null) systemSoundTimer.Stop();
             systemSoundTimer = new System.Windows.Threading.DispatcherTimer();
             systemSoundTimer.Interval = TimeSpan.FromMilliseconds(800);
             systemSoundTimer.Tick += delegate
             {
-                systemSoundTimer.Stop();
                 PlayNext();
             };
             systemSoundTimer.Start();
+        }
+
+        private static void OnMediaEnded(object sender, EventArgs e)
+        {
+            if (Object.ReferenceEquals(sender, player)) PlayNext();
+        }
+
+        private static void OnMediaFailed(object sender, System.Windows.Media.ExceptionEventArgs e)
+        {
+            if (Object.ReferenceEquals(sender, player)) PlayNext();
+        }
+
+        private static void ReleasePlayer()
+        {
+            MediaPlayer finished = player;
+            player = null;
+            if (finished == null) return;
+            finished.MediaEnded -= OnMediaEnded;
+            finished.MediaFailed -= OnMediaFailed;
+            try { finished.Close(); } catch { }
         }
     }
 

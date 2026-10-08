@@ -20,7 +20,7 @@
     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
      <Ellipse Width="46" Height="46"><Ellipse.Fill><ImageBrush x:Name="HeaderAvatarBrush" Stretch="UniformToFill"/></Ellipse.Fill></Ellipse>
      <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
-      <StackPanel Orientation="Horizontal"><TextBlock Text="开播铃" FontSize="21" FontWeight="Bold"/><Border Background="#EEEFFC" CornerRadius="5" Margin="10,3,0,3" Padding="6,2"><TextBlock Text="v1.2.1" FontSize="10" Foreground="#7A7CBD" VerticalAlignment="Center"/></Border></StackPanel>
+      <StackPanel Orientation="Horizontal"><TextBlock Text="开播铃" FontSize="21" FontWeight="Bold"/><Border Background="#EEEFFC" CornerRadius="5" Margin="10,3,0,3" Padding="6,2"><TextBlock Text="v1.2.2" FontSize="10" Foreground="#7A7CBD" VerticalAlignment="Center"/></Border></StackPanel>
       <TextBlock x:Name="HeaderSubtitleText" FontSize="12" Margin="0,3,0,0" Foreground="{StaticResource MutedBrush}"/>
      </StackPanel>
     </StackPanel>

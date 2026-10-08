@@ -30,7 +30,12 @@ namespace LiveBell
             activateEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ActivateEventName);
             activateWait = ThreadPool.RegisterWaitForSingleObject(activateEvent, OnActivateRequested, null, -1, false);
             MainWindow window;
-            try { window = new MainWindow(); }
+            try
+            {
+                AppState state = LocalData.Load();
+                RenderingPolicy.Configure(state.Settings);
+                window = new MainWindow(state);
+            }
             catch (Exception ex)
             {
                 MessageBox.Show(ex.Message, "开播铃无法启动", MessageBoxButton.OK, MessageBoxImage.Warning);

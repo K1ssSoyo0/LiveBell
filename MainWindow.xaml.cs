@@ -42,11 +42,13 @@ namespace LiveBell
             set { selectedStreamer = value; Changed("SelectedStreamer"); }
         }
 
-        public MainWindow()
+        public MainWindow() : this(LocalData.Load()) { }
+
+        internal MainWindow(AppState initialState)
         {
             InitializeComponent();
             Directory.CreateDirectory(LocalData.AvatarFolder);
-            state = LocalData.Load();
+            state = initialState;
             Streamers = new ObservableCollection<Streamer>(state.Streamers);
             foreach (Streamer streamer in Streamers)
             {

@@ -23,6 +23,7 @@ namespace LiveBell
             WindowsNoticeBox.IsChecked = Value.WindowsNotification;
             AutoStartBox.IsChecked = Value.AutoStart;
             ResidentBox.IsChecked = Value.ResidentInTray;
+            LowMemoryBox.IsChecked = Value.LowMemoryRendering;
             IntervalBox.Text = Value.IntervalSeconds.ToString();
             ToastSecondsBox.Text = Value.ToastSeconds.ToString();
             HeaderSubtitleBox.Text = Value.HeaderSubtitle ?? "";
@@ -54,6 +55,7 @@ namespace LiveBell
             Value.WindowsNotification = WindowsNoticeBox.IsChecked == true;
             Value.AutoStart = AutoStartBox.IsChecked == true;
             Value.ResidentInTray = ResidentBox.IsChecked == true;
+            Value.LowMemoryRendering = LowMemoryBox.IsChecked == true;
             Value.IntervalSeconds = interval;
             Value.ToastSeconds = toastSeconds;
             Value.HeaderSubtitle = (HeaderSubtitleBox.Text ?? "").Trim();
